@@ -950,5 +950,15 @@ socket.on('disconnect', () => {
 });
 
 socket.on('connect', () => {
+  console.log('[Socket] Connected to server:', socket.id);
   state.myId = socket.id;
+});
+
+socket.on('connect_error', (err) => {
+  console.error('[Socket] Connection Error:', err.message);
+  showToast(`Connection error: ${err.message}`, 'error', 4000);
+});
+
+socket.on('reconnect_attempt', (attempt) => {
+  console.log('[Socket] Reconnection attempt:', attempt);
 });
