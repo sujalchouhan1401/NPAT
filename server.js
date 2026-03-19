@@ -9,8 +9,14 @@ const GameManager = require('./server/gameLogic');
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { 
-  cors: { origin: '*' },
-  transports: ['websocket', 'polling']
+  cors: { 
+    origin: '*',
+    methods: ["GET", "POST"]
+  },
+  transports: ['polling', 'websocket'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  allowEIO3: true
 });
 const gm     = new GameManager();
 

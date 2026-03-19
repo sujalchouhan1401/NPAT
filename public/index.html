@@ -335,7 +335,15 @@
 <!-- Confetti canvas -->
 <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="/game.js"></script>
+  <!-- Round Over Overlay -->
+  <div id="round-over-overlay" class="round-over-overlay">
+    <div class="round-over-content">
+      <div class="round-over-title">🛑 STOP!</div>
+      <div class="round-over-sub">Round over. Capturing your answers…</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/game.js"></script>
 </body>
 </html>

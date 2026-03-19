@@ -7,7 +7,9 @@
 
 /* ─── Socket ────────────────────────────────── */
 const socket = io({
-  transports: ['websocket', 'polling']
+  transports: ['polling', 'websocket'],
+  upgrade: true,
+  rememberUpgrade: true
 });
 
 /* ─── State ─────────────────────────────────── */
@@ -886,6 +888,9 @@ socket.on('alphabetSelected', ({ letter, autoSelected, selectorName }) => {
   state.gamePhase     = 'playing';
   state.submitted     = false;
 
+  // Hide overlay
+  document.getElementById('round-over-overlay').classList.remove('active');
+
   // Game screen setup
   document.getElementById('game-round-info').textContent  = `Round ${state.currentRound} of ${state.totalRounds} | Turn ${state.currentTurn} of ${state.totalTurns}`;
   document.getElementById('game-letter-label').textContent = `Letter: ${letter}`;
@@ -957,15 +962,23 @@ socket.on('answersAccepted', () => {
 
 // ── Round Ending (Grace period starting) ──
 socket.on('roundEnding', ({ reason }) => {
+  SFX.roundEnd(); // Play sound early to signal stop
+  
+  // Show STOP overlay
+  const overlay = document.getElementById('round-over-overlay');
+  overlay.classList.add('active');
+  
+  // Set specific subtext if someone submitted
+  const sub = overlay.querySelector('.round-over-sub');
+  if (reason === 'first_submit') {
+    sub.textContent = 'Someone finished! Capturing your answers…';
+  } else {
+    sub.textContent = "Time's up! Capturing your answers…";
+  }
+
   // Disable all inputs immediately
   const inputs = document.querySelectorAll('.answer-input');
   inputs.forEach(i => i.disabled = true);
-
-  if (reason === 'first_submit') {
-    showToast('Someone submitted! Freezing inputs...', 'warn', 1200);
-  } else {
-    showToast('Time is up! Capturing answers...', 'warn', 1200);
-  }
 
   // If I haven't submitted yet, send what I have now!
   if (!state.submitted) {
