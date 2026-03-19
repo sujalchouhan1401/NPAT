@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Play Name Place Animal Thing online with friends – a multiplayer word game with a beautiful notebook design." />
+  <title>NPAT – Name Place Animal Thing</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- ════════════════════════════════════
+     SCREEN 1 – HOME
+════════════════════════════════════ -->
+<div id="screen-home" class="screen active">
+  <div class="paper">
+    <div class="paper-inner">
+      <div class="hero">
+        <span class="hero-deco">📓</span>
+        <div class="title-brand">N · P · A · T</div>
+        <div class="title-sub">Name &nbsp;·&nbsp; Place &nbsp;·&nbsp; Animal &nbsp;·&nbsp; Thing</div>
+        <p class="hero-tagline">
+          The classic word game, now multiplayer!<br/>
+          Gather your friends and race to fill the notebook 🖊️
+        </p>
+      </div>
+
+      <div class="btn-group" style="flex-direction:column;">
+        <button id="btn-create" class="btn btn-primary btn-lg btn-block">
+          ✏️ &nbsp; Create Room
+        </button>
+        <button id="btn-join" class="btn btn-accent btn-lg btn-block">
+          🚪 &nbsp; Join Room
+        </button>
+      </div>
+
+      <p class="text-muted text-center mt-16">2–10 players &nbsp;·&nbsp; No sign-up needed</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 2 – CREATE ROOM
+════════════════════════════════════ -->
+<div id="screen-create" class="screen">
+  <div class="paper">
+    <div class="paper-inner">
+      <h2>✏️ Create a Room</h2>
+      <h3 class="mb-16">Set up your game</h3>
+
+      <div class="input-group">
+        <label for="create-name">Your Name</label>
+        <input id="create-name" type="text" maxlength="20" placeholder="e.g. Sujal" autocomplete="off" />
+      </div>
+
+      <div class="input-group">
+        <label for="create-rounds">Number of Rounds</label>
+        <select id="create-rounds">
+          <option value="3">3 Rounds</option>
+          <option value="5" selected>5 Rounds</option>
+          <option value="7">7 Rounds</option>
+          <option value="10">10 Rounds</option>
+          <option value="15">15 Rounds</option>
+        </select>
+      </div>
+
+      <div class="btn-group mt-24">
+        <button id="btn-back-create" class="btn btn-ghost">← Back</button>
+        <button id="btn-do-create" class="btn btn-primary" style="flex:2">
+          🎮 &nbsp; Create Room
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 3 – JOIN ROOM
+════════════════════════════════════ -->
+<div id="screen-join" class="screen">
+  <div class="paper">
+    <div class="paper-inner">
+      <h2>🚪 Join a Room</h2>
+      <h3 class="mb-16">Enter the room code from your host</h3>
+
+      <div class="input-group">
+        <label for="join-name">Your Name</label>
+        <input id="join-name" type="text" maxlength="20" placeholder="e.g. Priya" autocomplete="off" />
+      </div>
+
+      <div class="input-group">
+        <label for="join-code">Room Code</label>
+        <input id="join-code" class="letter-input" type="text" maxlength="5"
+               placeholder="XXXXX" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="btn-group mt-24">
+        <button id="btn-back-join" class="btn btn-ghost">← Back</button>
+        <button id="btn-do-join" class="btn btn-accent" style="flex:2">
+          🚀 &nbsp; Join Room
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 4 – LOBBY
+════════════════════════════════════ -->
+<div id="screen-lobby" class="screen">
+  <div class="paper">
+    <div class="paper-inner">
+
+      <!-- Room Code -->
+      <div class="room-code-box">
+        <div class="room-code-label">🔑 Room Code – Share with friends!</div>
+        <div class="room-code-value" id="lobby-code">—</div>
+        <div class="copy-hint" id="copy-code-btn">📋 Tap to copy</div>
+      </div>
+
+      <!-- Player count heading + rounds badge -->
+      <div class="flex-between mb-8">
+        <h2 id="lobby-players-heading">👥 Players (0/10)</h2>
+        <span id="lobby-rounds-badge" class="badge badge-purple">5 Rounds</span>
+      </div>
+
+      <!-- Slot progress bar -->
+      <div class="slot-bar-wrap">
+        <div class="slot-bar-track">
+          <div class="slot-bar-fill" id="slot-bar-fill" style="width:0%"></div>
+        </div>
+        <span class="slot-bar-label" id="slot-bar-label">0 / 10 slots filled</span>
+      </div>
+
+      <!-- Players list -->
+      <ul class="players-list" id="lobby-players"></ul>
+
+      <!-- ── HOST panel ── -->
+      <div id="lobby-host-controls" style="display:none;" class="host-panel mt-16">
+
+        <div class="host-panel-header">
+          <span>👑 Host Settings</span>
+        </div>
+
+        <!-- Rounds selector (in lobby) -->
+        <div class="input-group mt-12">
+          <label for="lobby-rounds-select">📋 Number of Rounds</label>
+          <select id="lobby-rounds-select">
+            <option value="3">3 Rounds</option>
+            <option value="5" selected>5 Rounds</option>
+            <option value="7">7 Rounds</option>
+            <option value="10">10 Rounds</option>
+            <option value="15">15 Rounds</option>
+          </select>
+        </div>
+
+        <!-- Minimum-player status -->
+        <div id="lobby-min-warning" class="min-player-warning mt-8">
+          ⚠️ Need at least <strong>2 players</strong> to start the game.
+          <span id="lobby-min-count" class="min-count-badge">1/2</span>
+        </div>
+
+        <button id="btn-start-game" class="btn btn-success btn-lg btn-block mt-12" disabled>
+          🎯 &nbsp; Start Game!
+        </button>
+        <p class="text-muted text-center mt-8" id="lobby-host-hint">
+          Waiting for more players to join…
+        </p>
+      </div>
+
+      <!-- ── GUEST waiting panel ── -->
+      <div id="lobby-waiting" class="lobby-waiting mt-8">
+        <div class="spinner"></div>
+        <span>Waiting for the host to start…</span>
+        <span id="lobby-guest-rounds" class="badge badge-teal" style="margin-left:auto">5 Rounds</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 5 – LETTER SELECTION
+════════════════════════════════════ -->
+<div id="screen-select" class="screen">
+  <div class="paper">
+    <div class="timer-bar">
+      <div>
+        <div class="round-info" id="select-round-info">Round 1 of 5</div>
+        <div class="round-info" style="font-size:0.85rem" id="select-phase-label">Letter Selection</div>
+      </div>
+      <div class="timer-circle" id="select-timer">30</div>
+    </div>
+
+    <div class="paper-inner">
+      <div id="select-my-turn" style="display:none;">
+        <h2 class="text-center">🎲 Your Turn to Pick!</h2>
+        <p class="text-muted text-center mt-8 mb-16">Choose a starting letter for this round</p>
+        <div class="alphabet-grid" id="alphabet-grid"></div>
+      </div>
+
+      <div id="select-waiting" style="display:none;">
+        <h2 class="text-center">✋ Waiting…</h2>
+        <div class="waiting-badge mt-16">
+          <div class="spinner"></div>
+          <span id="selector-waiting-text">Player is choosing a letter…</span>
+        </div>
+      </div>
+
+      <div class="mt-24">
+        <h3 class="text-center mb-8">👥 Players</h3>
+        <ul class="players-list" id="select-players-list"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 6 – GAME PLAY
+════════════════════════════════════ -->
+<div id="screen-game" class="screen">
+  <div class="paper">
+    <div class="timer-bar">
+      <div>
+        <div class="round-info" id="game-round-info">Round 1 of 5</div>
+        <div class="round-info" style="font-size:0.85rem" id="game-letter-label">Letter: —</div>
+      </div>
+      <div class="timer-circle" id="game-timer">60</div>
+    </div>
+
+    <div class="paper-inner">
+      <div id="game-phase-banner" class="phase-banner playing">
+        🖊️ Fill in your answers before time runs out!
+      </div>
+
+      <div class="game-table-wrap">
+        <table class="game-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>🧑 Name</th>
+              <th>🗺️ Place</th>
+              <th>🦁 Animal</th>
+              <th>🎯 Thing</th>
+            </tr>
+          </thead>
+          <tbody id="game-table-body"></tbody>
+        </table>
+      </div>
+
+      <div id="submit-section" class="mt-16" style="display:none;">
+        <button id="btn-submit" class="btn btn-success btn-lg btn-block">
+          ✅ &nbsp; Submit Answers
+        </button>
+      </div>
+
+      <div id="submitted-msg" class="submitted-check mt-16" style="display:none;">
+        ✅ &nbsp; Answers submitted! Waiting for others…
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 7 – ROUND RESULTS
+════════════════════════════════════ -->
+<div id="screen-results" class="screen">
+  <div class="paper">
+    <div class="paper-inner">
+
+      <div class="results-header">
+        <div class="results-letter-badge" id="results-letter">A</div>
+        <h2 id="results-round-title">Round 1 Results</h2>
+        <p class="text-muted" id="results-round-sub">See how everyone did!</p>
+      </div>
+
+      <div class="game-table-wrap">
+        <table class="score-table" id="results-score-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>🧑 Name</th>
+              <th>🗺️ Place</th>
+              <th>🦁 Animal</th>
+              <th>🎯 Thing</th>
+              <th>Pts</th>
+            </tr>
+          </thead>
+          <tbody id="results-score-body"></tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+      <h3 class="mb-8">🏅 Leaderboard</h3>
+      <div class="leaderboard" id="results-leaderboard"></div>
+
+      <p class="text-muted text-center mt-16" id="results-next-msg">
+        Next round starts in a moment…
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     SCREEN 8 – GAME OVER
+════════════════════════════════════ -->
+<div id="screen-gameover" class="screen">
+  <div class="paper">
+    <div class="paper-inner">
+
+      <div class="winner-section">
+        <span class="trophy-icon">🏆</span>
+        <h2>Game Over!</h2>
+        <p class="text-muted mt-8">And the winner is…</p>
+        <div class="winner-name mt-8" id="winner-name">—</div>
+      </div>
+
+      <hr class="divider" />
+      <h3 class="mb-8">🏅 Final Standings</h3>
+      <div class="leaderboard" id="gameover-leaderboard"></div>
+
+      <div class="btn-group mt-24">
+        <button id="btn-play-again" class="btn btn-primary btn-lg" style="flex:1">
+          🔄 &nbsp; Play Again
+        </button>
+        <button id="btn-home" class="btn btn-ghost btn-lg" style="flex:1">
+          🏠 &nbsp; Home
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- Confetti canvas -->
+<canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/game.js"></script>
+</body>
+</html>
