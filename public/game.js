@@ -467,7 +467,7 @@ function initStepper(id, min = 1, max = 10, onChange = null) {
 }
 
 const updateCreateRounds = initStepper('create-rounds', 1, 10);
-const updateLobbyRounds = initStepper('lobby-rounds-select', 1, 10, (val) => {
+const updateLobbyRounds = initStepper('lobby-rounds', 1, 10, (val) => {
   if (state.isHost) socket.emit('updateRounds', { rounds: val });
 });
 
@@ -592,8 +592,7 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
     return;
   }
   SFX.click();
-  const rounds = document.getElementById('lobby-rounds-select').value;
-  socket.emit('startGame', { rounds });
+  socket.emit('startGame', { rounds: document.getElementById('lobby-rounds').value });
 });
 
 /**
@@ -628,7 +627,7 @@ function _updateLobbyUI(players, rounds, hostId) {
 
   if (isHost) {
     // Sync rounds selector
-    const sel = document.getElementById('lobby-rounds-select');
+    const sel = document.getElementById('lobby-rounds');
     if (sel && sel.value !== String(rounds)) {
       sel.value = rounds;
       const disp = document.getElementById('lobby-rounds-display');
