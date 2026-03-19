@@ -83,23 +83,32 @@ function endRound(roomCode, reason) {
   room.roundEnded = true;
   clearRoomTimer(room);
 
-  const result = gm.calculateScores(roomCode);
-  if (!result) {
-    console.error(`[Error] Failed to calculate scores for room ${roomCode}`);
-    return;
-  }
-  io.to(roomCode).emit('scoreUpdate', result);
+  io.to(roomCode).emit('roundEnding', { reason });
 
-  const delay = result.gameOver ? 0 : 0;
+  // Grace period (1.2s) to allow clients to send their partial answers
   setTimeout(() => {
+    // Re-fetch room in case it was deleted
+    const r2 = gm.getRoom(roomCode);
+    if (!r2) return;
+
+    const result = gm.calculateScores(roomCode);
+    if (!result) {
+      console.error(`[Error] Failed to calculate scores for room ${roomCode}`);
+      return;
+    }
+    io.to(roomCode).emit('scoreUpdate', result);
+
     if (result.gameOver) {
       io.to(roomCode).emit('gameOver', result);
     } else {
-      const nextData = gm.nextRound(roomCode);
-      io.to(roomCode).emit('nextTurn', nextData);
-      startSelectionTimer(roomCode);
+      // Only proceed to next round if game is not over
+      setTimeout(() => {
+        const nextData = gm.nextRound(roomCode);
+        io.to(roomCode).emit('nextTurn', nextData);
+        startSelectionTimer(roomCode);
+      }, 4800); // 4.8s after scoreUpdate (1.2s + 4.8s = 6s total)
     }
-  }, 6000); // 6 s to read results before next round
+  }, 1200);
 }
 
 /* ═══════════════════════════════════════════════════════

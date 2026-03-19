@@ -946,8 +946,37 @@ socket.on('answersAccepted', () => {
   document.getElementById('submitted-msg').style.display  = 'flex';
 });
 
+// ── Round Ending (Grace period starting) ──
+socket.on('roundEnding', ({ reason }) => {
+  // Disable all inputs immediately
+  const inputs = document.querySelectorAll('.answer-input');
+  inputs.forEach(i => i.disabled = true);
+
+  if (reason === 'first_submit') {
+    showToast('Someone submitted! Freezing inputs...', 'warn', 1200);
+  } else {
+    showToast('Time is up! Capturing answers...', 'warn', 1200);
+  }
+
+  // If I haven't submitted yet, send what I have now!
+  if (!state.submitted) {
+    autoSubmitCurrentAnswers();
+  }
+});
+
+function autoSubmitCurrentAnswers() {
+  const answers = {};
+  ['name', 'place', 'animal', 'thing'].forEach(cat => {
+    const el = document.getElementById(`input-${cat}-${state.myId}`);
+    if (el) answers[cat] = el.value.trim();
+  });
+  
+  state.submitted = true;
+  socket.emit('submitAnswers', answers);
+}
+
 /* ── Score Update (Round Results) ── */
-socket.on('scoreUpdate', data => {
+socket.on('scoreUpdate', (result) => {
   SFX.roundEnd();
   renderRoundResults(data);
 
