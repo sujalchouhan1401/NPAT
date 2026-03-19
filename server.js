@@ -14,6 +14,10 @@ const gm     = new GameManager();
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+// Global log for server start details
+console.log('--- Server Initialized ---');
+console.log('Static files served from /public');
+
 /* ═══════════════════════════════════════════════════════
    TIMER HELPERS
 ═══════════════════════════════════════════════════════ */
@@ -77,6 +81,10 @@ function endRound(roomCode, reason) {
   clearRoomTimer(room);
 
   const result = gm.calculateScores(roomCode);
+  if (!result) {
+    console.error(`[Error] Failed to calculate scores for room ${roomCode}`);
+    return;
+  }
   io.to(roomCode).emit('scoreUpdate', result);
 
   const delay = result.gameOver ? 0 : 0;
@@ -96,8 +104,11 @@ function endRound(roomCode, reason) {
 ═══════════════════════════════════════════════════════ */
 
 io.on('connection', socket => {
+  console.log(`[Socket] User Connected: ${socket.id}`);
+
   /* ── Create Room ── */
   socket.on('createRoom', ({ playerName, rounds }) => {
+    console.log(`[Socket] createRoom from ${playerName} (${socket.id})`);
     if (!playerName?.trim()) return socket.emit('error', 'Name is required');
     const room = gm.createRoom(socket.id, playerName.trim(), rounds);
     socket.join(room.code);
@@ -115,6 +126,7 @@ io.on('connection', socket => {
 
   /* ── Join Room ── */
   socket.on('joinRoom', ({ playerName, roomCode }) => {
+    console.log(`[Socket] joinRoom: ${playerName} attempting to join ${roomCode}`);
     if (!playerName?.trim()) return socket.emit('error', 'Name is required');
     const code   = (roomCode || '').trim().toUpperCase();
     const result = gm.joinRoom(socket.id, playerName.trim(), code);
@@ -207,7 +219,8 @@ io.on('connection', socket => {
   });
 
   /* ── Disconnect ── */
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
+    console.log(`[Socket] User Disconnected: ${socket.id} (Reason: ${reason})`);
     const room = gm.removePlayer(socket.id);
     if (!room) return;
 
