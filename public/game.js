@@ -326,9 +326,10 @@ function renderRoundResults(data) {
     cats.forEach(cat => {
       const c = ps.categories[cat] || { answer: '', points: 0 };
       const pillClass = c.points === 0 ? 'zero' : c.shared ? 'shared' : '';
+      const displayPoints = c.points > 0 ? `${c.points}/10` : '0';
       cells += `<td>
-        <div>${c.answer || '<i style="opacity:.4">—</i>'}</div>
-        <span class="points-pill ${pillClass}">${c.points}pts</span>
+        <div style="font-size:1.15rem;margin-bottom:4px">${c.answer || '<i style="opacity:.4">—</i>'}</div>
+        <span class="points-pill ${pillClass}">${displayPoints} pts</span>
       </td>`;
     });
     cells += `<td><b style="font-size:1.3rem;color:var(--accent2)">${ps.total}</b></td>`;
@@ -666,13 +667,21 @@ function submitAnswers() {
   SFX.submit();
 
   const answers = {};
+  let emptyCount = 0;
   ['name', 'place', 'animal', 'thing'].forEach(cat => {
     const inp = document.getElementById(`ans-${cat}`);
-    answers[cat] = inp ? inp.value.trim() : '';
+    const val = inp ? inp.value.trim() : '';
+    answers[cat] = val;
+    if (!val) emptyCount++;
   });
 
+  if (emptyCount > 0) {
+    showToast(`📝 Fill all 4 sections to submit early! (${4 - emptyCount}/4 filled)`, 'warn', 3000);
+    return;
+  }
+
   state.submitted = true;
-  socket.emit('submitAnswers', { answers });
+  socket.emit('submitAnswers', answers);
 
   // Disable inputs
   document.querySelectorAll('.answer-input').forEach(inp => inp.disabled = true);
@@ -978,9 +987,9 @@ function autoSubmitCurrentAnswers() {
 /* ── Score Update (Round Results) ── */
 socket.on('scoreUpdate', (result) => {
   SFX.roundEnd();
-  renderRoundResults(data);
+  renderRoundResults(result);
 
-  if (!data.gameOver) {
+  if (!result.gameOver) {
     document.getElementById('results-next-msg').textContent = 'Next round starts in 6 seconds…';
   } else {
     document.getElementById('results-next-msg').textContent = 'Calculating final standings…';
