@@ -54,14 +54,13 @@
       </div>
 
       <div class="input-group">
-        <label for="create-rounds">Number of Rounds</label>
-        <select id="create-rounds">
-          <option value="3">3 Rounds</option>
-          <option value="5" selected>5 Rounds</option>
-          <option value="7">7 Rounds</option>
-          <option value="10">10 Rounds</option>
-          <option value="15">15 Rounds</option>
-        </select>
+        <label>Number of Rounds</label>
+        <div class="stepper-wrap">
+          <button type="button" class="stepper-btn" id="create-rounds-minus" aria-label="Decrease rounds">−</button>
+          <div class="stepper-value" id="create-rounds-display">5</div>
+          <button type="button" class="stepper-btn" id="create-rounds-plus" aria-label="Increase rounds">+</button>
+          <input type="hidden" id="create-rounds" value="5" />
+        </div>
       </div>
 
       <div class="btn-group mt-24">
@@ -144,14 +143,13 @@
 
         <!-- Rounds selector (in lobby) -->
         <div class="input-group mt-12">
-          <label for="lobby-rounds-select">📋 Number of Rounds</label>
-          <select id="lobby-rounds-select">
-            <option value="3">3 Rounds</option>
-            <option value="5" selected>5 Rounds</option>
-            <option value="7">7 Rounds</option>
-            <option value="10">10 Rounds</option>
-            <option value="15">15 Rounds</option>
-          </select>
+          <label>📋 Number of Rounds</label>
+          <div class="stepper-wrap">
+            <button type="button" class="stepper-btn" id="lobby-rounds-minus" aria-label="Decrease rounds">−</button>
+            <div class="stepper-value" id="lobby-rounds-display">5</div>
+            <button type="button" class="stepper-btn" id="lobby-rounds-plus" aria-label="Increase rounds">+</button>
+            <input type="hidden" id="lobby-rounds-select" value="5" />
+          </div>
         </div>
 
         <!-- Minimum-player status -->

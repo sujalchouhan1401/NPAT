@@ -189,6 +189,50 @@ input.letter-input {
 
 .input-group { margin-bottom: 18px; }
 
+/* ─── Stepper ───────────────────────────────── */
+.stepper-wrap {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.7);
+  border: 2px solid var(--line-color);
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 180px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.stepper-wrap:focus-within {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 4px rgba(124,77,255,0.12);
+}
+
+.stepper-btn {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.5rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.stepper-btn:hover { background: rgba(0,0,0,0.05); }
+.stepper-btn:active { transform: scale(0.9); }
+.stepper-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.stepper-value {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-hand);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent2);
+}
+
 /* ─── Buttons ───────────────────────────────── */
 .btn {
   display: inline-flex;

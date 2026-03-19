@@ -8,7 +8,10 @@ const GameManager = require('./server/gameLogic');
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, { cors: { origin: '*' } });
+const io     = new Server(server, { 
+  cors: { origin: '*' },
+  transports: ['websocket', 'polling']
+});
 const gm     = new GameManager();
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -158,7 +161,7 @@ io.on('connection', socket => {
     }
 
     // Allow host to finalise rounds from the lobby selector
-    if (rounds) room.rounds = Math.min(Math.max(parseInt(rounds) || 5, 1), 15);
+    if (rounds) room.rounds = Math.min(Math.max(parseInt(rounds) || 5, 1), 10);
 
     const roundData = gm.startGame(room.code);
     if (roundData) {
@@ -171,7 +174,7 @@ io.on('connection', socket => {
   socket.on('updateRounds', ({ rounds }) => {
     const room = gm.getRoomByPlayer(socket.id);
     if (!room || room.host !== socket.id || room.phase !== 'lobby') return;
-    room.rounds = Math.min(Math.max(parseInt(rounds) || 5, 1), 15);
+    room.rounds = Math.min(Math.max(parseInt(rounds) || 5, 1), 10);
     io.to(room.code).emit('lobbyUpdate', {
       players: Object.values(room.players),
       host:    room.host,

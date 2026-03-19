@@ -6,7 +6,9 @@
 'use strict';
 
 /* ─── Socket ────────────────────────────────── */
-const socket = io();
+const socket = io({
+  transports: ['websocket', 'polling']
+});
 
 /* ─── State ─────────────────────────────────── */
 const state = {
@@ -169,6 +171,11 @@ const SFX = {
 
 function showToast(msg, type = 'info', duration = 3000) {
   const c   = document.getElementById('toast-container');
+  
+  // Prevent stacking identical errors quickly
+  const existing = Array.from(c.querySelectorAll('.toast')).find(t => t.textContent === msg);
+  if (existing && type === 'error') return;
+
   const div = document.createElement('div');
   div.className = `toast toast-${type}`;
   div.textContent = msg;
@@ -435,6 +442,35 @@ document.getElementById('btn-back-join').addEventListener('click', () => {
   showScreen('home');
 });
 
+/* ─── Stepper Logic ─────────────────────────── */
+function initStepper(id, min = 1, max = 10, onChange = null) {
+  const minus = document.getElementById(`${id}-minus`);
+  const plus  = document.getElementById(`${id}-plus`);
+  const disp  = document.getElementById(`${id}-display`);
+  const input = document.getElementById(id);
+
+  const update = (val) => {
+    val = Math.max(min, Math.min(max, val));
+    disp.textContent = val;
+    input.value = val;
+    minus.disabled = (val <= min);
+    plus.disabled  = (val >= max);
+    if (onChange) onChange(val);
+  };
+
+  minus.addEventListener('click', () => { SFX.click(); update(parseInt(input.value) - 1); });
+  plus.addEventListener('click',  () => { SFX.click(); update(parseInt(input.value) + 1); });
+
+  // Init
+  update(parseInt(input.value));
+  return update;
+}
+
+const updateCreateRounds = initStepper('create-rounds', 1, 10);
+const updateLobbyRounds = initStepper('lobby-rounds-select', 1, 10, (val) => {
+  if (state.isHost) socket.emit('updateRounds', { rounds: val });
+});
+
 /* ─── Auto-uppercase + max-length enforcement ─── */
 const joinCodeInput = document.getElementById('join-code');
 joinCodeInput.addEventListener('input', function () {
@@ -546,11 +582,7 @@ document.getElementById('copy-code-btn').addEventListener('click', () => {
   }).catch(() => {});
 });
 
-/* ─── Host: rounds selector change → broadcast to all ─── */
-document.getElementById('lobby-rounds-select').addEventListener('change', function () {
-  SFX.click();
-  socket.emit('updateRounds', { rounds: this.value });
-});
+// Removed old lobby-rounds-select change listener (now handled by initStepper)
 
 /* ─── Host: Start Game ────────────────────── */
 document.getElementById('btn-start-game').addEventListener('click', () => {
@@ -597,7 +629,11 @@ function _updateLobbyUI(players, rounds, hostId) {
   if (isHost) {
     // Sync rounds selector
     const sel = document.getElementById('lobby-rounds-select');
-    if (sel && sel.value !== String(rounds)) sel.value = rounds;
+    if (sel && sel.value !== String(rounds)) {
+      sel.value = rounds;
+      const disp = document.getElementById('lobby-rounds-display');
+      if (disp) disp.textContent = rounds;
+    }
 
     // Min-player warning
     const warn  = document.getElementById('lobby-min-warning');

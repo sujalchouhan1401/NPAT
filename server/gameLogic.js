@@ -40,7 +40,7 @@ class GameManager {
       code,
       host: socketId,
       players: { [socketId]: player },
-      rounds: Math.min(Math.max(parseInt(rounds) || 5, 1), 15),
+      rounds: Math.min(Math.max(parseInt(rounds) || 5, 1), 10),
       currentRound: 0,
       usedAlphabets: [],
       currentLetter: null,
