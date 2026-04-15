@@ -8,15 +8,22 @@ const GameManager = require('./server/gameLogic');
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, { 
-  cors: { 
+const io     = new Server(server, {
+  cors: {
     origin: '*',
-    methods: ["GET", "POST"]
+    methods: ['GET', 'POST'],
+    credentials: false,
   },
+  // Allow both transports; production environments (Render) favour WebSocket
   transports: ['polling', 'websocket'],
-  pingTimeout: 60000,
+  // Generous timeouts for slow/mobile connections
+  pingTimeout:  60000,
   pingInterval: 25000,
-  allowEIO3: true
+  // Upgrade from polling → WebSocket when possible
+  upgradeTimeout: 10000,
+  // Needed for some reverse-proxy environments (Render uses one)
+  allowEIO3: true,
+  maxHttpBufferSize: 1e6, // 1 MB — prevents oversized packet abuse
 });
 
 // Diagnostic: Check fetch availability
@@ -25,6 +32,11 @@ console.log(`[Diagnostic] fetch available: ${typeof fetch !== 'undefined'}`);
 const gm     = new GameManager();
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Health check endpoint — required by Render to confirm the service is alive
+app.get('/health', (_, res) => res.status(200).json({ status: 'ok', uptime: process.uptime() }));
+
+// Catch-all: serve the SPA for any other route
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // Global log for server start details
