@@ -103,12 +103,11 @@ function endRound(roomCode, reason) {
   const room = gm.getRoom(roomCode);
   if (!room || room.roundEnded) return;
   room.roundEnded = true;
-  room.roundActive = false; // Lock it here too just in case
   clearRoomTimer(room);
 
   io.to(roomCode).emit('roundEnding', { reason });
 
-  // Grace period (3s) to allow clients to send their partial answers
+  // Grace period (3s) to allow clients to sync their last partial answers
   setTimeout(async () => {
     try {
       // Re-fetch room in case it was deleted
@@ -116,7 +115,7 @@ function endRound(roomCode, reason) {
       if (!r2) return;
 
       r2.roundActive = false; // NOW submissions are strictly closed
-      console.log(`[Flow] STOP Screen End for ${roomCode}. Calculating scores...`);
+      console.log(`[Flow] Grace period ended for ${roomCode}. Calculating scores...`);
       // Validate all answers across all players for this round
       const validationResults = await gm.validateAllAnswers(roomCode).catch(err => {
         console.error(`[Critical Error] Validation logic failed:`, err);
@@ -149,7 +148,27 @@ function endRound(roomCode, reason) {
     } catch (err) {
       console.error(`[Critical Error] endRound failed for room ${roomCode}:`, err);
     }
-  }, 100); // 100ms delay for "instant" feel while allowing last sync packets
+  }, 3000); // 3s grace period
+}
+
+/* ─── Leave / Disconnect Helper ────────────────── */
+function handlePlayerLeft(socket) {
+  const room = gm.removePlayer(socket.id);
+  if (!room) return;
+
+  const remaining = Object.values(room.players);
+  if (remaining.length === 0) {
+    gm.deleteRoom(room.code);
+    return;
+  }
+
+  // Re-assign host if needed
+  if (room.host === socket.id) room.host = remaining[0].id;
+
+  io.to(room.code).emit('playerLeft', {
+    players: remaining,
+    host:    room.host,
+  });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -276,10 +295,8 @@ io.on('connection', socket => {
       socket.emit('answersAccepted');
 
       if (result.firstSubmit) {
-        console.log(`[Flow] FIRST SUBMISSION by ${socket.id} in ${roomCode}. LOCKING ROUND INSTANTLY.`);
+        console.log(`[Flow] FIRST SUBMISSION by ${socket.id} in ${roomCode}. Starting 3s grace period.`);
         
-        // LOCK IMMEDIATELY
-        room.roundActive = false; 
         clearRoomTimer(room);
 
         io.to(room.code).emit('roundStopped', {
@@ -291,9 +308,7 @@ io.on('connection', socket => {
       } else {
         const allSubmitted = Object.keys(room.players).every(id => room.answers[id]);
         if (allSubmitted) {
-          console.log(`[Server] All players submitted in room ${roomCode}. Finalizing immediately...`);
-          // OPTIONAL: Skip the rest of the grace period if EVERYONE submitted? 
-          // For consistency with the 3s STOP slide, we'll let endRound finish its 3s.
+          console.log(`[Server] All players submitted in room ${roomCode}.`);
         }
       }
     } catch (err) {
@@ -319,25 +334,16 @@ io.on('connection', socket => {
     }
   });
 
+  /* ── Leave Room ── */
+  socket.on('leaveRoom', () => {
+    console.log(`[Socket] User Leaving Room: ${socket.id}`);
+    handlePlayerLeft(socket);
+  });
+
   /* ── Disconnect ── */
   socket.on('disconnect', (reason) => {
     console.log(`[Socket] User Disconnected: ${socket.id} (Reason: ${reason})`);
-    const room = gm.removePlayer(socket.id);
-    if (!room) return;
-
-    const remaining = Object.values(room.players);
-    if (remaining.length === 0) {
-      gm.deleteRoom(room.code);
-      return;
-    }
-
-    // Re-assign host if needed
-    if (room.host === socket.id) room.host = remaining[0].id;
-
-    io.to(room.code).emit('playerLeft', {
-      players: remaining,
-      host:    room.host,
-    });
+    handlePlayerLeft(socket);
   });
 });
 

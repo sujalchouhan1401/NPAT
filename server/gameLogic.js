@@ -85,6 +85,7 @@ class GameManager {
 
     room.phase = 'selecting';
     room.currentRound = 1;
+    room.currentSelectorIndex = 0; // Reset selector index for new game
     room.roundEnded = false;
 
     return this._roundStartPayload(room);

@@ -744,6 +744,9 @@ document.getElementById('btn-home').addEventListener('click', () => {
 });
 
 function resetState() {
+  if (state.roomCode) {
+    socket.emit('leaveRoom');
+  }
   state.roomCode      = null;
   state.myId          = null;
   state.isHost        = false;

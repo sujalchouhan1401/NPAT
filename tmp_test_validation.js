@@ -6,6 +6,9 @@ async function test() {
   // Add guest player
   gm.joinRoom('guest', 'GuestPlayer', room.code);
   
+  // Set letter for validation
+  room.currentLetter = 'A';
+  
   // Set answers for this round
   room.answers = {
     'host': { name: 'Apple', place: 'asdfgh', animal: 'Lion', thing: 'Table' },
