@@ -676,6 +676,17 @@ input.letter-input {
 .points-pill.shared { background: var(--warning); color: var(--ink); }
 .points-pill.zero   { background: rgba(0,0,0,0.1); color: var(--ink-light); }
 
+/* Word Validity Styles */
+.word-valid {
+  color: var(--success) !important;
+  font-weight: 600;
+}
+.word-invalid {
+  color: var(--danger) !important;
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
 /* ─── Leaderboard ─────────────────────────────── */
 .leaderboard {
   margin: 20px 0;

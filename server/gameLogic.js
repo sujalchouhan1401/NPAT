@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateAllAnswers, clearCache } = require('./validator');
+
 const CATEGORIES = ['name', 'place', 'animal', 'thing'];
 const ALL_ALPHABETS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -7,6 +9,7 @@ class GameManager {
   constructor() {
     this.rooms = {};        // roomCode → room object
     this.playerRooms = {}; // socketId → roomCode
+    // Note: validation cache is now managed inside validator.js with TTL
   }
 
   /* ─── Utilities ─────────────────────────────────────── */
@@ -51,6 +54,7 @@ class GameManager {
       roundEnded: false,
       firstSubmitter: null,
       currentTimer: null,
+      roundActive: false, // Explicit flag for submission control
     };
 
     this.playerRooms[socketId] = code;
@@ -123,6 +127,7 @@ class GameManager {
     room.phase = 'playing';
     room.answers = {};
     room.roundEnded = false;
+    room.roundActive = true; // Round is now active for submissions
     room.firstSubmitter = null;
 
     return { letter: L };
@@ -141,8 +146,17 @@ class GameManager {
 
   submitAnswers(roomCode, socketId, answers) {
     const room = this.rooms[roomCode];
-    if (!room || room.phase !== 'playing') return null;
-    if (room.answers[socketId]) return null; // already submitted
+    console.log(`[Logic] submitAnswers for room ${roomCode} from ${socketId}. Active: ${room?.roundActive}`);
+    
+    if (!room || room.phase !== 'playing' || !room.roundActive) {
+      console.warn(`[Logic] Submission rejected. Room: ${!!room}, Phase: ${room?.phase}, Active: ${room?.roundActive}`);
+      return null;
+    }
+    
+    if (room.answers[socketId]) {
+      console.warn(`[Logic] Duplicate submission from ${socketId}`);
+      return null;
+    }
 
     // Sanitize answers
     const clean = {};
@@ -150,51 +164,105 @@ class GameManager {
     room.answers[socketId] = clean;
 
     const isFirst = room.firstSubmitter === null;
-    if (isFirst) room.firstSubmitter = socketId;
+    if (isFirst) {
+      room.firstSubmitter = socketId;
+      // Note: roundActive is now kept TRUE during the 3s grace period
+      // to capture other players' inputs. It is set to false in server.js endRound().
+    }
 
     return { firstSubmit: isFirst };
   }
 
+  /* ─── Validation (delegates to validator.js) ────────── */
+
+  /**
+   * Validate all player answers for a room.
+   * Returns structured results: { [playerId]: { answers: { name, place, animal, thing: { value, valid } } } }
+   */
+  async validateAllAnswers(roomCode) {
+    const room = this.rooms[roomCode];
+    if (!room) return {};
+
+    console.log(`[Validation] Starting for room ${roomCode}, letter: ${room.currentLetter}`);
+    const results = await validateAllAnswers(room.answers, room.currentLetter);
+    console.log(`[Validation] Complete for room ${roomCode}`);
+    return results;
+  }
+
+  /** Clear the validator cache between games */
+  clearValidationCache() {
+    clearCache();
+  }
+
   /* ─── Scoring ────────────────────────────────────────── */
 
-  calculateScores(roomCode) {
+  /**
+   * Calculate scores using the structured validation results from validateAllAnswers().
+   *
+   * validationResults format:
+   *   { [playerId]: { answers: { name, place, animal, thing: { value, valid } } } }
+   *
+   * Scoring rules:
+   *   • 10 pts  → unique valid answer (no other player wrote the same word)
+   *   •  5 pts  → shared valid answer (2+ players wrote the same word)
+   *   •  0 pts  → blank, wrong letter, or invalid word
+   */
+  calculateScores(roomCode, validationResults = {}) {
     const room = this.rooms[roomCode];
     if (!room) return null;
 
+    console.log(`\n--- [FLOW] SCORING START: ROOM ${roomCode} ---`);
+    console.log(`Letter: ${room.currentLetter}`);
+
     const players = Object.values(room.players);
     const roundScores = {};
-    players.forEach(p => { roundScores[p.id] = { name: p.name, categories: {}, total: 0 }; });
+    players.forEach(p => {
+      roundScores[p.id] = { name: p.name, categories: {}, total: 0 };
+      console.log(`[Collected Answers] ${p.name}:`, room.answers[p.id] || 'NO DATA');
+    });
 
     CATEGORIES.forEach(cat => {
-      // Normalize answers for deduplication
+      console.log(`\n[Category: ${cat.toUpperCase()}]`);
+
+      // ── Step 1: determine each player's validity from structured results ──
       const normalised = {};
+      const frequencyMap = {}; // normalised word → count of valid answers
+
       players.forEach(p => {
         const raw  = room.answers[p.id]?.[cat] ?? '';
         const norm = raw.trim().toLowerCase();
-        normalised[p.id] = { raw, norm };
+
+        // Pull validity from the new structured validation results
+        const playerResult = validationResults[p.id]?.answers?.[cat];
+        const isValid = playerResult ? playerResult.valid : false;
+
+        normalised[p.id] = { raw, norm, isValid };
+
+        if (norm && isValid) {
+          frequencyMap[norm] = (frequencyMap[norm] || 0) + 1;
+        }
       });
 
-      // Group by normalised value
-      const groups = {};
-      players.forEach(p => {
-        const { norm } = normalised[p.id];
-        if (!norm) return;
-        if (!groups[norm]) groups[norm] = [];
-        groups[norm].push(p.id);
-      });
+      console.log(`[Frequency Map]`, frequencyMap);
 
-      // Award points
+      // ── Step 2: award points ──
       players.forEach(p => {
-        const { raw, norm } = normalised[p.id];
-        if (!norm) {
-          roundScores[p.id].categories[cat] = { answer: '', points: 0, shared: false };
+        const { raw, norm, isValid } = normalised[p.id];
+
+        if (!norm || !isValid) {
+          roundScores[p.id].categories[cat] = { answer: raw, points: 0, shared: false, valid: false };
+          console.log(`  > ${p.name}: "${raw}" → 0 pts (Invalid or Empty)`);
           return;
         }
-        const group = groups[norm];
-        // Score = 10 / number of players with same answer
-        const pts = Number((10 / group.length).toFixed(1)); 
-        roundScores[p.id].categories[cat] = { answer: raw, points: pts, shared: group.length > 1 };
+
+        const count  = frequencyMap[norm];
+        const shared = count > 1;
+        // ✅ Strict 10 / 5 / 0 scoring
+        const pts    = shared ? 5 : 10;
+
+        roundScores[p.id].categories[cat] = { answer: raw, points: pts, shared, valid: true };
         roundScores[p.id].total += pts;
+        console.log(`  > ${p.name}: "${raw}" → ${pts} pts ${shared ? `(Shared ×${count})` : '(Unique)'}`);
       });
     });
 
@@ -204,9 +272,13 @@ class GameManager {
       p.roundScores.push(roundScores[p.id].total);
     });
 
+    console.log(`\n--- [FLOW] FINAL SCORES ---`);
+    Object.values(roundScores).forEach(rs => console.log(`${rs.name}: ${rs.total} pts`));
+
     const leaderboard = [...players].sort((a, b) => b.score - a.score);
-    // Game over when every player has had 'rounds' number of turns
     const gameOver = room.currentSelectorIndex >= (room.rounds * players.length) - 1;
+
+    console.log(`-------------------------------------------\n`);
 
     return {
       round: Math.floor(room.currentSelectorIndex / players.length) + 1,
@@ -229,6 +301,7 @@ class GameManager {
     room.currentSelectorIndex++;
     room.phase = 'selecting';
     room.roundEnded = false;
+    room.roundActive = false; // Reset for next selection
     room.answers = {};
     room.firstSubmitter = null;
 

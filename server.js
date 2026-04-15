@@ -18,6 +18,10 @@ const io     = new Server(server, {
   pingInterval: 25000,
   allowEIO3: true
 });
+
+// Diagnostic: Check fetch availability
+console.log(`[Diagnostic] Node version: ${process.version}`);
+console.log(`[Diagnostic] fetch available: ${typeof fetch !== 'undefined'}`);
 const gm     = new GameManager();
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -87,34 +91,53 @@ function endRound(roomCode, reason) {
   const room = gm.getRoom(roomCode);
   if (!room || room.roundEnded) return;
   room.roundEnded = true;
+  room.roundActive = false; // Lock it here too just in case
   clearRoomTimer(room);
 
   io.to(roomCode).emit('roundEnding', { reason });
 
-  // Grace period (1.2s) to allow clients to send their partial answers
-  setTimeout(() => {
-    // Re-fetch room in case it was deleted
-    const r2 = gm.getRoom(roomCode);
-    if (!r2) return;
+  // Grace period (3s) to allow clients to send their partial answers
+  setTimeout(async () => {
+    try {
+      // Re-fetch room in case it was deleted
+      const r2 = gm.getRoom(roomCode);
+      if (!r2) return;
 
-    const result = gm.calculateScores(roomCode);
-    if (!result) {
-      console.error(`[Error] Failed to calculate scores for room ${roomCode}`);
-      return;
-    }
-    io.to(roomCode).emit('scoreUpdate', result);
+      r2.roundActive = false; // NOW submissions are strictly closed
+      console.log(`[Flow] STOP Screen End for ${roomCode}. Calculating scores...`);
+      // Validate all answers across all players for this round
+      const validationResults = await gm.validateAllAnswers(roomCode).catch(err => {
+        console.error(`[Critical Error] Validation logic failed:`, err);
+        return {}; 
+      });
 
-    if (result.gameOver) {
-      io.to(roomCode).emit('gameOver', result);
-    } else {
-      // Only proceed to next round if game is not over
-      setTimeout(() => {
-        const nextData = gm.nextRound(roomCode);
-        io.to(roomCode).emit('nextTurn', nextData);
-        startSelectionTimer(roomCode);
-      }, 4800); // 4.8s after scoreUpdate (1.2s + 4.8s = 6s total)
+      const result = gm.calculateScores(roomCode, validationResults);
+      if (!result) {
+        console.error(`[Error] Failed to calculate scores for room ${roomCode}`);
+        return;
+      }
+      
+      console.log(`[Flow] Emitting showScores for ${roomCode}`);
+      io.to(roomCode).emit('showScores', result);
+      // Fallback for older clients
+      io.to(roomCode).emit('scoreUpdate', result);
+
+      if (result.gameOver) {
+        io.to(roomCode).emit('gameOver', result);
+      } else {
+        // Only proceed to next round if game is not over
+        setTimeout(() => {
+          console.log(`[Flow] Results screen end for ${roomCode}. Starting next turn...`);
+          gm.clearValidationCache(); // Reset validation cache for next turn
+          const nextData = gm.nextRound(roomCode);
+          io.to(roomCode).emit('nextTurn', nextData);
+          startSelectionTimer(roomCode);
+        }, 5000); // 5s after showScores
+      }
+    } catch (err) {
+      console.error(`[Critical Error] endRound failed for room ${roomCode}:`, err);
     }
-  }, 1200);
+  }, 100); // 100ms delay for "instant" feel while allowing last sync packets
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -180,6 +203,7 @@ io.on('connection', socket => {
 
     const roundData = gm.startGame(room.code);
     if (roundData) {
+      gm.clearValidationCache(); // Reset validation cache at game start
       io.to(room.code).emit('gameStarted', roundData);
       startSelectionTimer(room.code);
     }
@@ -211,28 +235,75 @@ io.on('connection', socket => {
   });
 
   /* ── Submit Answers ── */
-  socket.on('submitAnswers', ({ answers }) => {
-    const room = gm.getRoomByPlayer(socket.id);
-    if (!room || room.roundEnded) return;
+  socket.on('submitAnswers', (data) => {
+    try {
+      const { roomCode, playerId, answers } = data || {};
+      console.log(`[Server] Received submission from ${playerId} in room ${roomCode}`);
+      console.log(`[Server] Answers:`, answers);
 
-    const result = gm.submitAnswers(room.code, socket.id, answers);
-    if (!result) return;
-
-    socket.emit('answersAccepted');
-
-    if (result.firstSubmit) {
-      // If any player submits early, immediately stop the round for all players
-      io.to(room.code).emit('roundStopped', {
-        submittedBy: room.players[socket.id]?.name,
-      });
-      endRound(room.code, 'firstSubmit');
-    } else {
-      // This case might not be reached if the round ends immediately on first submit,
-      // but we keep it for safety in case of simultaneous submissions.
-      const allSubmitted = Object.keys(room.players).every(id => room.answers[id]);
-      if (allSubmitted) {
-        endRound(room.code, 'allSubmitted');
+      const room = gm.getRoom(roomCode);
+      if (!room) {
+        console.warn(`[Server] Submission rejected: Room ${roomCode} not found.`);
+        return socket.emit('error', 'Room not found.');
       }
+
+      if (!room.players[socket.id]) {
+        console.warn(`[Server] Submission rejected: Player ${socket.id} not in room ${roomCode}.`);
+        return socket.emit('error', 'You are not in this room.');
+      }
+
+      if (!room.roundActive) {
+        console.warn(`[Server] Submission rejected: Round is no longer active for room ${roomCode}.`);
+        return; 
+      }
+
+      const result = gm.submitAnswers(room.code, socket.id, answers);
+      if (!result) return;
+
+      console.log(`[Server] Submission accepted for ${socket.id}`);
+      socket.emit('answersAccepted');
+
+      if (result.firstSubmit) {
+        console.log(`[Flow] FIRST SUBMISSION by ${socket.id} in ${roomCode}. LOCKING ROUND INSTANTLY.`);
+        
+        // LOCK IMMEDIATELY
+        room.roundActive = false; 
+        clearRoomTimer(room);
+
+        io.to(room.code).emit('roundStopped', {
+          submittedBy: room.players[socket.id]?.name,
+        });
+        
+        // Trigger endRound flow (which handles validation and scoring)
+        endRound(room.code, 'firstSubmit');
+      } else {
+        const allSubmitted = Object.keys(room.players).every(id => room.answers[id]);
+        if (allSubmitted) {
+          console.log(`[Server] All players submitted in room ${roomCode}. Finalizing immediately...`);
+          // OPTIONAL: Skip the rest of the grace period if EVERYONE submitted? 
+          // For consistency with the 3s STOP slide, we'll let endRound finish its 3s.
+        }
+      }
+    } catch (err) {
+      console.error(`[Critical Server Error] submitAnswers listener failed:`, err);
+      socket.emit('error', 'An internal error occurred during submission.');
+    }
+  });
+
+  /* ── Update Answer (Real-time Sync) ── */
+  socket.on('updateAnswer', (data) => {
+    try {
+      const { roomCode, category, value } = data || {};
+      const room = gm.getRoom(roomCode);
+      
+      if (!room || room.phase !== 'playing' || !room.roundActive) return;
+
+      // Update answer in real-time
+      if (!room.answers[socket.id]) room.answers[socket.id] = {};
+      room.answers[socket.id][category] = (value || '').trim();
+      
+    } catch (err) {
+      console.error(`[Server Error] updateAnswer listener failed:`, err);
     }
   });
 
@@ -263,3 +334,12 @@ io.on('connection', socket => {
 ═══════════════════════════════════════════════════════ */
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🎮  NPAT server running → http://localhost:${PORT}`));
+
+// Global Crash Prevention
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Unhandled Rejection] at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err, origin) => {
+  console.error(`[Uncaught Exception] at: ${origin}. error: ${err}`);
+});

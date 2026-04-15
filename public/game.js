@@ -24,7 +24,8 @@ const state = {
   totalRounds:   5,
   currentTurn:   1,
   totalTurns:    1,
-  submitted:  false,
+  submitted:    false,
+  roundFrozen:  false, // true when ANY player submits — freezes timer for everyone
   gamePhase:  'lobby', // lobby | selecting | playing | results | gameover
 };
 
@@ -277,9 +278,16 @@ function buildGameTable(players, letter) {
 
     cats.forEach((cat, i) => {
       if (isMe) {
-        cells += `<td><input class="answer-input" id="ans-${cat}" type="text"
-          maxlength="40" placeholder="${letter}…" autocomplete="off"
-          data-cat="${cat}" data-idx="${i}" /></td>`;
+        cells += `
+        <td>
+          <input 
+            class="answer-input" 
+            id="ans-${cat}" 
+            type="text" 
+            placeholder="${cat.charAt(0).toUpperCase() + cat.slice(1)}..."
+            oninput="syncAnswer('${cat}', this.value)"
+          />
+        </td>`;
       } else {
         cells += `<td><span id="opp-${p.id}-${cat}" style="font-family:var(--font-hand);color:var(--ink-light);font-size:1rem">—</span></td>`;
       }
@@ -326,11 +334,15 @@ function renderRoundResults(data) {
     const tr = document.createElement('tr');
     let cells = `<td><b>${ps.name}</b></td>`;
     cats.forEach(cat => {
-      const c = ps.categories[cat] || { answer: '', points: 0 };
+      const c = ps.categories[cat] || { answer: '', points: 0, valid: false };
       const pillClass = c.points === 0 ? 'zero' : c.shared ? 'shared' : '';
       const displayPoints = c.points > 0 ? `${c.points}/10` : '0';
+      const validityClass = c.answer ? (c.valid ? 'word-valid' : 'word-invalid') : '';
+      
       cells += `<td>
-        <div style="font-size:1.15rem;margin-bottom:4px">${c.answer || '<i style="opacity:.4">—</i>'}</div>
+        <div class="${validityClass}" style="font-size:1.15rem;margin-bottom:4px">
+          ${c.answer || '<i style="opacity:.4">—</i>'}
+        </div>
         <span class="points-pill ${pillClass}">${displayPoints} pts</span>
       </td>`;
     });
@@ -664,8 +676,21 @@ function _updateLobbyUI(players, rounds, hostId) {
 
 document.getElementById('btn-submit').addEventListener('click', submitAnswers);
 
+/* ── Answer Sync ── */
+function syncAnswer(category, value) {
+  if (state.submitted) return;
+  
+  socket.emit('updateAnswer', {
+    roomCode: state.roomCode,
+    category: category,
+    value: value
+  });
+}
+
 function submitAnswers() {
   if (state.submitted) return;
+  
+  console.log('[Submit] Clicked. Current state:', state);
   SFX.submit();
 
   const answers = {};
@@ -682,11 +707,21 @@ function submitAnswers() {
     return;
   }
 
-  state.submitted = true;
-  socket.emit('submitAnswers', answers);
+  const submissionData = {
+    roomCode: state.roomCode,
+    playerId: socket.id,
+    answers: answers
+  };
 
-  // Disable inputs
-  document.querySelectorAll('.answer-input').forEach(inp => inp.disabled = true);
+  console.log('[Submit] Emitting to server:', submissionData);
+  state.submitted = true;
+  socket.emit('submitAnswers', submissionData);
+
+  // Disable inputs immediately
+  document.querySelectorAll('.answer-input').forEach(inp => {
+    inp.disabled = true;
+    inp.blur();
+  });
   document.getElementById('submit-section').style.display = 'none';
   document.getElementById('submitted-msg').style.display  = 'flex';
 }
@@ -709,13 +744,14 @@ document.getElementById('btn-home').addEventListener('click', () => {
 });
 
 function resetState() {
-  state.roomCode     = null;
-  state.myId         = null;
-  state.isHost       = false;
-  state.players      = [];
+  state.roomCode      = null;
+  state.myId          = null;
+  state.isHost        = false;
+  state.players       = [];
   state.currentLetter = null;
-  state.submitted    = false;
-  state.gamePhase    = 'lobby';
+  state.submitted     = false;
+  state.roundFrozen   = false;
+  state.gamePhase     = 'lobby';
 }
 
 /* ═══════════════════════════════════════════════
@@ -825,6 +861,7 @@ socket.on('gameStarted', ({ round, totalRounds, turn, totalTurns, selectorId, se
   state.totalTurns    = totalTurns;
   state.gamePhase     = 'selecting';
   state.submitted     = false;
+  state.roundFrozen   = false;
 
   setupSelectionScreen(round, totalRounds, turn, totalTurns, selectorId, selectorName, availableAlphabets, usedAlphabets || []);
   showScreen('select');
@@ -833,12 +870,21 @@ socket.on('gameStarted', ({ round, totalRounds, turn, totalTurns, selectorId, se
 
 /* ── Next Turn ── */
 socket.on('nextTurn', ({ round, totalRounds, turn, totalTurns, selectorId, selectorName, availableAlphabets, usedAlphabets }) => {
-  state.currentRound = round;
-  state.totalRounds  = totalRounds;
-  state.currentTurn  = turn;
-  state.totalTurns   = totalTurns;
-  state.submitted    = false;
-  state.gamePhase    = 'selecting';
+  console.log(`[Flow] nextTurn received. Round: ${round}, Turn: ${turn}`);
+  state.currentRound  = round;
+  state.totalRounds   = totalRounds;
+  state.currentTurn   = turn;
+  state.totalTurns    = totalTurns;
+  state.submitted     = false;
+  state.roundFrozen   = false; // unfreeze for fresh turn
+  state.gamePhase     = 'selecting';
+
+  // UI Reset for new turn
+  document.getElementById('round-over-overlay').classList.remove('active');
+  document.querySelectorAll('.answer-input').forEach(i => {
+    i.disabled = false;
+    i.value = '';
+  });
 
   setupSelectionScreen(round, totalRounds, turn, totalTurns, selectorId, selectorName, availableAlphabets, usedAlphabets || []);
   showScreen('select');
@@ -894,8 +940,10 @@ socket.on('alphabetSelected', ({ letter, autoSelected, selectorName }) => {
   // Game screen setup
   document.getElementById('game-round-info').textContent  = `Round ${state.currentRound} of ${state.totalRounds} | Turn ${state.currentTurn} of ${state.totalTurns}`;
   document.getElementById('game-letter-label').textContent = `Letter: ${letter}`;
-  document.getElementById('game-timer').textContent        = '60';
-  document.getElementById('game-timer').classList.remove('urgent');
+  const gameTimerEl = document.getElementById('game-timer');
+  gameTimerEl.textContent  = '60';
+  gameTimerEl.style.color  = ''; // reset freeze color
+  gameTimerEl.classList.remove('urgent');
 
   // Phase banner
   document.getElementById('game-phase-banner').textContent = `🖊️ Fill in as many as you can! Letter: "${letter}"`;
@@ -919,96 +967,154 @@ socket.on('alphabetSelected', ({ letter, autoSelected, selectorName }) => {
 
 /* ── Timer Update ── */
 socket.on('timerUpdate', ({ time, phase }) => {
+  // Freeze timer for ALL players once any player submits or round is stopped
+  if (state.roundFrozen && phase === 'game') return;
+
   const el = document.getElementById(phase === 'selection' ? 'select-timer' : 'game-timer');
   if (el) setTimer(el, time, phase);
 });
 
-/* ── Round Stopped (Early Submission) ── */
+/* ── Round Stopped (First Submission) ── */
 socket.on('roundStopped', ({ submittedBy }) => {
-  state.submitted = true; // prevent local submission if not already done
-  
-  // Disable all inputs immediately
+  console.log(`[Flow] Round stopped by ${submittedBy}. Freezing UI for all players.`);
+  SFX.roundEnd();
+
+  // Freeze state for ALL players — no more timer ticks, no more submissions
+  state.submitted   = true;
+  state.roundFrozen = true;
+
+  // Instantly freeze all inputs & hide submit button
   document.querySelectorAll('.answer-input').forEach(i => {
     i.disabled = true;
-    i.blur(); // Remove focus
+    i.blur();
   });
-  
   document.getElementById('submit-section').style.display = 'none';
-  
+
+  // Show frozen message — different for the submitter vs others
+  const submittedMsg = document.getElementById('submitted-msg');
+  submittedMsg.style.display = 'flex';
+  const isMe = submittedBy === state.myName;
+  submittedMsg.innerHTML = isMe
+    ? `<span>✅ You submitted! Waiting for results…</span>`
+    : `<span>⏰ <b>${submittedBy}</b> finished first! Time's up for everyone.</span>`;
+
+  // Freeze the timer display
+  const timer = document.getElementById('game-timer');
+  if (timer) {
+    timer.textContent = '⏹';
+    timer.classList.remove('urgent');
+    timer.style.color = 'var(--ink-light)';
+  }
+
+  // Show the round-over overlay with who stopped the round
+  const overlay = document.getElementById('round-over-overlay');
+  if (overlay) {
+    overlay.classList.add('active');
+    const title = overlay.querySelector('.round-over-title');
+    const sub   = overlay.querySelector('.round-over-sub');
+    if (title) title.textContent = isMe ? '✅ Submitted!' : '⏹ Time\'s Up!';
+    if (sub)   sub.textContent   = isMe
+      ? 'Waiting for results…'
+      : `${submittedBy} finished first! Calculating scores…`;
+  }
+
+  // Update phase banner
   const banner = document.getElementById('game-phase-banner');
-  banner.textContent = `⏰ ${submittedBy} submitted! Round stopped!`;
-  banner.className = 'phase-banner ending';
-  
-  SFX.roundEnd();
-  showToast(`${submittedBy} submitted first! 🏁`, 'warn', 2500);
+  if (banner) {
+    banner.textContent = isMe ? '✅ Answers submitted!' : `⏹ ${submittedBy} finished! Round over.`;
+    banner.className = 'phase-banner ending';
+  }
 });
 
-/* ── Round Ending (legacy/fallback) ── */
-socket.on('roundEnding', ({ submittedBy, allSubmitted }) => {
-  // This might still be used for "Time's up" or other scenarios
+/* ── Round Ending (General stop/timer) ── */
+socket.on('roundEnding', ({ reason, submittedBy }) => {
+  console.log(`[Flow] roundEnding received. Reason: ${reason}`);
+  SFX.roundEnd();
+  state.submitted = true;
+
+  const overlay = document.getElementById('round-over-overlay');
+  if (overlay) overlay.classList.add('active');
+  
   const banner = document.getElementById('game-phase-banner');
-  banner.textContent = allSubmitted
-    ? `✅ All submitted! Calculating scores…`
-    : `⏰ ${submittedBy} submitted! Finish up!`;
-  banner.className = 'phase-banner ending';
+  if (banner) {
+    banner.textContent = "⏰ Round stopped! Calculating...";
+    banner.className = 'phase-banner ending';
+  }
+
+  // Freeze timer UI
+  const timer = document.getElementById('game-timer');
+  if (timer) timer.textContent = '0';
+
+  // Final disable
+  document.querySelectorAll('.answer-input').forEach(i => i.disabled = true);
+
+  if (reason === 'timer') {
+    autoSubmitCurrentAnswers();
+  }
 });
 
 /* ── Answers Accepted ── */
 socket.on('answersAccepted', () => {
   document.querySelectorAll('.answer-input').forEach(i => i.disabled = true);
   document.getElementById('submit-section').style.display = 'none';
-  document.getElementById('submitted-msg').style.display  = 'flex';
 });
 
-// ── Round Ending (Grace period starting) ──
-socket.on('roundEnding', ({ reason }) => {
-  SFX.roundEnd(); // Play sound early to signal stop
-  
-  // Show STOP overlay
-  const overlay = document.getElementById('round-over-overlay');
-  overlay.classList.add('active');
-  
-  // Set specific subtext if someone submitted
-  const sub = overlay.querySelector('.round-over-sub');
-  if (reason === 'first_submit') {
-    sub.textContent = 'Someone finished! Capturing your answers…';
-  } else {
-    sub.textContent = "Time's up! Capturing your answers…";
-  }
-
-  // Disable all inputs immediately
-  const inputs = document.querySelectorAll('.answer-input');
-  inputs.forEach(i => i.disabled = true);
-
-  // If I haven't submitted yet, send what I have now!
-  if (!state.submitted) {
-    autoSubmitCurrentAnswers();
-  }
-});
 
 function autoSubmitCurrentAnswers() {
+  if (state.submitted) return;
+  
   const answers = {};
   ['name', 'place', 'animal', 'thing'].forEach(cat => {
-    const el = document.getElementById(`input-${cat}-${state.myId}`);
+    const el = document.getElementById(`ans-${cat}`);
     if (el) answers[cat] = el.value.trim();
   });
   
+  const submissionData = {
+    roomCode: state.roomCode,
+    playerId: socket.id,
+    answers: answers
+  };
+
+  console.log('[Auto-Submit] Time up! Emitting to server:', submissionData);
   state.submitted = true;
-  socket.emit('submitAnswers', answers);
+  socket.emit('submitAnswers', submissionData);
+
+  // Disable UI
+  document.querySelectorAll('.answer-input').forEach(inp => inp.disabled = true);
+  document.getElementById('submit-section').style.display = 'none';
+  document.getElementById('submitted-msg').style.display  = 'flex';
 }
 
-/* ── Score Update (Round Results) ── */
-socket.on('scoreUpdate', (result) => {
+/* ── Show Scores (New Flow) ── */
+socket.on('showScores', (result) => {
+  console.log('[Flow] showScores received. Hiding STOP screen.');
+  
+  // Hide STOP overlay
+  const overlay = document.getElementById('round-over-overlay');
+  if (overlay) overlay.classList.remove('active');
+
   SFX.roundEnd();
   renderRoundResults(result);
 
   if (!result.gameOver) {
-    document.getElementById('results-next-msg').textContent = 'Next round starts in 6 seconds…';
+    document.getElementById('results-next-msg').textContent = 'Next round starts in 5 seconds…';
   } else {
     document.getElementById('results-next-msg').textContent = 'Calculating final standings…';
   }
 
   showScreen('results');
+});
+
+/* ── Score Update (Legacy/Fallback) ── */
+socket.on('scoreUpdate', (result) => {
+  console.log('[Flow] scoreUpdate (legacy) received.');
+  // Reuse showScores logic if not already handled
+  if (state.gamePhase === 'playing') {
+    const overlay = document.getElementById('round-over-overlay');
+    if (overlay) overlay.classList.remove('active');
+    renderRoundResults(result);
+    showScreen('results');
+  }
 });
 
 /* ── Game Over ── */
